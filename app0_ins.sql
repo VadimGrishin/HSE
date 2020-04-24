@@ -20,6 +20,8 @@ AS $BODY$DECLARE
 	--user_range_a_time timestamp; user_range_q_o_time timestamp; 
 	--str_time timestamp; heat_time timestamp; aud_time timestamp; fin_time timestamp; 
 BEGIN
+  --SET enable_seqscan TO off;
+  
   select id from coursera_structure.course c 
      where c.load_id =app0_ins.load_id into xcourse_id;
   
@@ -34,9 +36,10 @@ BEGIN
   -- если чего-то не хватает, делаем основную работу по созданию вспомогательных таблиц ***************
   if (xstr_cnt * xheat_cnt * xaud_cnt = 0) then
   
-         drop table if exists quit0;
-  
+    RAISE NOTICE 'quit0 %', clock_timestamp();
 		drop table if exists struc;
+		drop table if exists first1;
+		drop table if exists first2;
 		drop table if exists first_attempt;
 		drop table if exists user_range_a; 
 		drop table if exists user_range_q;
@@ -75,35 +78,40 @@ BEGIN
         
 		select cast(clock_timestamp() as text) into time_point;
         time_steps = time_steps || '*struc:         ' || time_point;
+		RAISE NOTICE 'struc %', clock_timestamp();
+		
+	-- first attempt block:
+		CREATE TABLE first1 AS
+		select course_id, hse_user_ext_id, ia.item_id, action_start_ts, min(action_ts) action_ts --, assessment_ext_id
+		from coursera_event.caq_event
+			join coursera_structure.assessment a on a.ext_id=assessment_ext_id and a.load_id=app0_ins.load_id --90 --!!!!
+			join coursera_structure.assessment_type at on at.id=a.type_id
+			join coursera_structure.item_assessment ia on ia.assessment_id=a.id
+		where course_id=xcourse_id and question_ext_id is not null and a.type_id=7 --7=summative
+		group by course_id, hse_user_ext_id, ia.item_id, action_start_ts; --, action_version  , assessment_ext_id
+	RAISE NOTICE 'first1 %', clock_timestamp();
+		
+		CREATE TABLE first2 AS
+		select course_id, hse_user_ext_id, item_id, min(action_start_ts) action_start_ts, min(action_ts) action_ts
+		from first1
+		group by course_id, hse_user_ext_id, item_id;
+		
+		RAISE NOTICE 'first2 %', clock_timestamp();
 		
 		CREATE TABLE first_attempt AS 
-			-- first_attempt
 		select  
 					item_id, assessment_ext_id, question_ext_id, response_score, hse_user_ext_id --, (action_ts - action_start_ts) time_dlt 
 					, sum(response_score) over (partition by item_id, assessment_ext_id, hse_user_ext_id) resp_sum
 					, variance(response_score) over(partition by item_id, assessment_ext_id, question_ext_id) question_var
-					, response_ext_id
-		--into first_attempt            
+					, response_ext_id          
 		from coursera_event.caq_event 
-		join
-			-- последовательно отбираем акции с самым первым стартом, среди них -  с самым первым окончанием:
-			(select course_id, hse_user_ext_id, item_id, min(action_start_ts) action_start_ts, min(action_ts) action_ts
-			 from
-			 ( 
-			  select course_id, hse_user_ext_id, ia.item_id, action_start_ts, min(action_ts) action_ts --, assessment_ext_id
-			   from coursera_event.caq_event
-				join coursera_structure.assessment a on a.ext_id=assessment_ext_id and a.load_id=app0_ins.load_id --90 --!!!!
-				join coursera_structure.assessment_type at on at.id=a.type_id
-				join coursera_structure.item_assessment ia on ia.assessment_id=a.id
-			  where course_id=xcourse_id and question_ext_id is not null and a.type_id=7 --7=summative
-			  group by course_id, hse_user_ext_id, ia.item_id, action_start_ts --, action_version  , assessment_ext_id
-			 )   as x --using(course_id, hse_user_ext_id, action_ts, action_start_ts) --, action_version , assessment_ext_id
-			 group by course_id, hse_user_ext_id, item_id
-			) as y using(course_id, hse_user_ext_id, action_ts, action_start_ts)
-		where question_ext_id is not null;   -- удаляем акции, которые не с вопросами-ответами;
+			join first2 using(course_id, hse_user_ext_id, action_ts, action_start_ts)
+		where question_ext_id is not null;
 		
 		select cast(clock_timestamp() as text) into time_point;
 		time_steps = time_steps || '*first_attempt: ' || time_point;
+	RAISE NOTICE 'first_attempt %', clock_timestamp();
+	-- end of first attempt block
 
         CREATE TABLE user_range_q AS
 		-- user_range_q
@@ -136,6 +144,7 @@ BEGIN
 		
 		select cast(clock_timestamp() as text) into time_point;
 		time_steps = time_steps || '*user_range_q:  ' || time_point;
+	RAISE NOTICE 'user_range_q %', clock_timestamp();
 
 		CREATE TABLE  user_range_a AS
 		-- user_range_a
@@ -161,6 +170,7 @@ BEGIN
 				   
 	   select cast(clock_timestamp() as text) into time_point;
 	   time_steps = time_steps || '*user_range_a:  ' || time_point;
+	 RAISE NOTICE 'user_range_a %', clock_timestamp();
 				   
 	   CREATE TABLE user_range_q_o AS
 		select  
@@ -186,6 +196,7 @@ BEGIN
 			
 			select cast(clock_timestamp() as text) into time_point;
 			time_steps = time_steps || '*user_range_q_o:' || time_point;
+		RAISE NOTICE 'user_range_q_o %', clock_timestamp();
 	
   end if;  -- if (xstr_cnt * xheat_cnt * xaud_cnt = 0)
   
@@ -340,12 +351,15 @@ BEGIN
   select cast(clock_timestamp() as text) into time_point;
   time_steps = time_steps || '*fin: ' || time_point;
   
+  --SET enable_seqscan TO on;
   return  xstr || xheat || xaud || time_steps;
+  
 EXCEPTION WHEN OTHERS THEN
   GET STACKED DIAGNOSTICS text_var1 = MESSAGE_TEXT,
                           text_var2 = PG_EXCEPTION_DETAIL,
                           text_var3 = PG_EXCEPTION_HINT;
 	return  'app0_ins Error ' || text_var1 || ' | ' || text_var2 ||  ' | ' || text_var3;					  
+
 END;$BODY$;
 
 ALTER FUNCTION data_mart.app0_ins(integer)
