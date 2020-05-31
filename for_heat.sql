@@ -22,7 +22,7 @@ select c.id course_id, c.shortname cname, cs.id mid, cs.name m_name, qz.id quizi
 	, slt.slot aq_ord, qst.id qid, qst.questiontext
 	-- , qza.attempt, qza.state quizstate, qza.sumgrades
     , qza.sumgrades
-	, qsta.questionusageid, qsta.questionsummary, qsta.rightanswer, qsta.responsesummary
+	, qsta.id questionattemptid, qsta.questionusageid, qsta.questionsummary, qsta.rightanswer, qsta.responsesummary
     , qstas.state, fraction response_score, attm_time
     ,  count(*) over (partition by c.id, cs.id, qz.id, userid) k_q
 				, max(slt.slot) over (partition by c.id, cs.id, qz.id, userid) max_aqord 
@@ -47,6 +47,21 @@ from mdl_course_modules cm
 where module=25 and qza.attempt=1 -- and c.id=4
 order by cm.course, cs.id, instance, dense_rank() OVER (PARTITION BY c.id, cs.id, qz.id ORDER BY qza.sumgrades, userid), slt.slot;
 
+select * from user_range_q where questionattemptid=2766;
+
+drop index user_range_q_qa_idx on user_range_q;
+drop index last_step_options_qa_idx on last_step_options;
+
+create unique index user_range_q_qa_idx on user_range_q (questionattemptid);
+create index last_step_options_qa_idx on last_step_options (questionattemptid);
+
+drop table if exists user_range_qo;
+
+create table user_range_qo as
+	select urq.*, lso.name, lso.stem, lso.choice, lso.option_val, lso.option_txt from user_range_q urq
+	join last_step_options lso on urq.questionattemptid=lso.questionattemptid limit 200000;
+
+select * from user_range_qo order by userid, questionattemptid, name;
 
 CREATE TABLE  user_range_a AS
 select course_id, max(cname) cname, mid, max(m_name) m_name, quizid, max(quizname) quizname  -- свертываем question_ext_id
@@ -95,7 +110,7 @@ select
 
 select                                  -- свертываем  hse_user_ext_id у user_range_q
 			  3 platform_id
-			  , course_id, cname
+			  , course_id, max(cname) cname
 			  , mid, m_name
 			  , quizid, quizname
 			  , aq_ord
@@ -123,7 +138,51 @@ select                                  -- свертываем  hse_user_ext_id
 			  , qid;
 
 
+select  
+			    3 platform_id
+			    , course_id, max(cname) cname
+				, mid, m_name
+		 		, quizid, quizname
+				, k_q, max_aqord, aq_ord -- , response_score
+				, qid questionid, max(questiontext) prompt
+                  -- , name
+                , case when substring(name, 1, 6)='answer' then 'radio'
+				  else 'checkbox'
+                end answ_type
+                , case when substring(name, 1, 6)='answer' then  q_aw.id 
+                       else stem
+                end option_id
+		 		   -- , choice
+                   -- , userid, cd
+                , case when substring(name, 1, 6)='answer' then  q_aw.fraction 
+                       else option_val
+                end option_val
+                   -- , option_txt
+                   -- , q_aw.id=stem, q_aw.id q_aw_id,  q_aw.answer, q_aw.fraction
+                , max(case when substring(name, 1, 6)='answer' then q_aw.answer else option_txt end) display
+				, count(*) cnt
+				, count(distinct userid) user_cnt
+				, sum(case when cd<0.25 then ((name='answer' and q_aw.id=stem) or (name like 'choice%' and choice=1)) else 0 end) weak_num
+				, sum(case when cd<0.25 then 1 else 0 end) weak_denom
+				, sum(case when cd>0.75 then ((name='answer' and q_aw.id=stem) or (name like 'choice%' and choice=1)) else 0 end) strong_num
+				, sum(case when cd>0.75 then 1 else 0 end) strong_denom
 
+		from user_range_qo 
+         left join mdl_question_answers q_aw on q_aw.question=qid and name='answer'
+		group by course_id, mid, m_name, quizid, quizname, k_q, max_aqord, aq_ord, qid, substring(name, 1, 6)
+        , case when substring(name, 1, 6)='answer' then  q_aw.id 
+                       else stem
+                end
+        , case when substring(name, 1, 6)='answer' then  q_aw.fraction 
+                       else option_val
+                end 
+		order by course_id, mid, quizid
+        -- , cd
+        , qid, aq_ord
+        , case when substring(name, 1, 6)='answer' then  q_aw.id 
+                       else stem
+                end;
+        limit 1000;
 
 
 
