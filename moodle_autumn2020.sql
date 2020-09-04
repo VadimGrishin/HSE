@@ -4,6 +4,7 @@ AS $$
 SELECT ARRAY(SELECT unnest($1) ORDER BY 1)
 $$;
 
+252494 
 
 select steps, sgnt, count(*) cnt, max(qa_id), min(qa_id) qa_id from 
 (
@@ -13,7 +14,7 @@ select qa_id, count(distinct qas_id) steps, array_sort(array_agg(concat(cast(qas
 group by steps, sgnt
 order by cnt desc
 
-select count(*), max(index) from moodle_event.sheet_moodle
+select count(*), max(index), count(distinct index) from moodle_event.sheet_moodle
 
 -- user_range_qo
 CREATE TABLE moodle_event.user_range_qo
@@ -53,13 +54,13 @@ order by s.index
 
 
 select * from moodle_event.user_range_qo
-where qz_id=5116
+where qid=83783  --252460 
 order by index
 
 update moodle_event.user_range_qo
 set choice= ((qasd_value='0' and stem_answer='Неверно') 
 			 or (qasd_value='1' and stem_answer='Верно')
-			 or (qasd_value=stem_answer))::integer
+			 or (qasd_value=stem_answer))::integer   -- Возможно надо сделать UPPER
 where qasd_order is null
 
 alter table moodle_event.user_range_qo
@@ -90,14 +91,29 @@ add column display text
 
 update moodle_event.user_range_qo  urqo
 set option_val = case when qasd_name like 'choice%' then choice_fraction
-			  	      when qasd_name='answer' and input_answer is null then stem_fraction
-			   	      else null
+			  	      -- when qasd_name='answer' and input_answer is null then stem_fraction
+			   	      else stem_fraction
 				end, 
 	display = case when qasd_name like 'choice%' then choice_answer
-			       when qasd_name='answer' and input_answer is null then stem_answer
-			  else null
+			      -- when qasd_name='answer' and input_answer is null then stem_answer
+			  else stem_answer
 	          end 
-	
+
+alter table moodle_event.user_range_qo
+add column qas_indicator integer
+
+create table indic as
+select distinct index, stem_id, floor(cume_dist() OVER (PARTITION BY qas_id ORDER BY index, stem_id)) qas_indicator
+from  moodle_event.user_range_qo
+
+select * from indic order by index, stem_id limit 100
+
+create index ind_qasd_stem on indic(index, stem_id, qas_indicator) TABLESPACE openeduevent
+
+update moodle_event.user_range_qo  urqo
+set qas_indicator = (select qas_indicator from indic where indic.index=urqo.index and indic.stem_id=urqo.stem_id)
+
+
 CREATE TABLE moodle_event.user_range_q
 tablespace openeduevent as
 select *
@@ -220,13 +236,16 @@ select
                 , max(display) display
 				, count(*) cnt
 				, sum(choice) tot_num
+				, sum(qas_indicator * finish_score) tot_num2
 				, count(distinct usrqo.userid) user_cnt
 				, max(rnk) max_rnk
 				, sum(case when cd<=0.25 then choice  else 0 end) weak_num
+				, sum(case when cd<=0.25 then qas_indicator * finish_score  else 0 end) weak_num2
 				, sum(case when cd<=0.25 then 1 else 0 end) weak_denom
 				, sum(case when cd>0.75 then choice else 0 end) strong_num
+				, sum(case when cd>0.75 then qas_indicator * finish_score else 0 end) strong_num2
 				, sum(case when cd>0.75 then 1 else 0 end) strong_denom
-
+				 
 		from moodle_event.user_range_qo usrqo
           join moodle_event.user_range_q usrq using(qas_id)
 		  join moodle_event.mdl_course c on usrqo.course_id=c.id
