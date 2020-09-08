@@ -102,16 +102,20 @@ set option_val = case when qasd_name like 'choice%' then choice_fraction
 alter table moodle_event.user_range_qo
 add column qas_indicator integer
 
+drop table indic
+
 create table indic as
-select distinct index, stem_id, floor(cume_dist() OVER (PARTITION BY qas_id ORDER BY index, stem_id)) qas_indicator
+select distinct index, stem_id, choice_id, floor(cume_dist() OVER (PARTITION BY qas_id ORDER BY index, stem_id, choice_id)) qas_indicator
 from  moodle_event.user_range_qo
 
-select * from indic order by index, stem_id limit 100
+select * from indic where stem_id = 293284 order by index, stem_id limit 100
 
-create index ind_qasd_stem on indic(index, stem_id, qas_indicator) TABLESPACE openeduevent
+select * from moodle_event.user_range_qo where qas_id = 2879818
+
+create index ind_qasd_stem on indic(index, stem_id, choice_id, qas_indicator) TABLESPACE openeduevent
 
 update moodle_event.user_range_qo  urqo
-set qas_indicator = (select qas_indicator from indic where indic.index=urqo.index and indic.stem_id=urqo.stem_id)
+set qas_indicator = (select qas_indicator from indic where indic.index=urqo.index and coalesce(indic.stem_id, 0)=coalesce(urqo.stem_id, 0)  and coalesce(indic.choice_id, 0)=coalesce(urqo.choice_id, 0))
 
 
 CREATE TABLE moodle_event.user_range_q
@@ -235,8 +239,8 @@ select
 				, min(usrqo.qas_state) min_state, max(usrqo.qas_state) max_state
                 , max(display) display
 				, count(*) cnt
-				, sum(choice) tot_num
-				, sum(qas_indicator * finish_score) tot_num2
+				, sum(choice) tot_num -- количество выборов опций
+				, sum(qas_indicator * finish_score) tot_num2 -- количество реальных баллов за вопрос, выставленных системой
 				, count(distinct usrqo.userid) user_cnt
 				, max(rnk) max_rnk
 				, sum(case when cd<=0.25 then choice  else 0 end) weak_num
