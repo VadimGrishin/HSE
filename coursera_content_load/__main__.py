@@ -35,7 +35,6 @@ zip_list = list(filter(lambda x: x[-4:] == '.zip', os.listdir(folder)))
 for zipname in zip_list:
     conn = psycopg2.connect(**conn_settings)
 
-
     # загрузим структуры и события по каждому архиву из папки, если еще не загружены
     try:
         print('\n***************** loading structure *************************')
