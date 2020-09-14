@@ -26,8 +26,8 @@ folder = 'E:\\Coursera_zips'
 conn_settings = {
     'dbname': 'test',
     'user': 'postgres',
-    'password': 'pg215',
-    'host': 'VM-AS494',
+    'password': '***',
+    'host': 'VM-****',
 }
 
 zip_list = list(filter(lambda x: x[-4:] == '.zip', os.listdir(folder)))
