@@ -93,7 +93,7 @@ def upsert_reference_tables(myzip):
     обертка для обновления справочников
     """
     print(tm(), inspect.stack()[0][3], locals())
-    engine = create_engine('postgresql+psycopg2://postgres:pg215@VM-AS494:5432/test')
+    engine = create_engine('postgresql+psycopg2://postgres:***@VM-***:5432/test')
 
     conn = engine.raw_connection()
     cur = conn.cursor()
