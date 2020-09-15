@@ -109,7 +109,7 @@ CREATE SERVER ubunserver FOREIGN DATA WRAPPER postgres_fdw OPTIONS (host '192.16
 
 select * from pg_shadow;
 
-CREATE USER MAPPING FOR postgres SERVER  ubunserver OPTIONS (user 'postgres', password 'quovadis');
+CREATE USER MAPPING FOR postgres SERVER  ubunserver OPTIONS (user 'postgres', password '***');
 
  create FOREIGN  table ubtbl1(id integer,  name text) SERVER ubunserver;
 
