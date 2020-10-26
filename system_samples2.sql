@@ -36,6 +36,10 @@ SELECT sum(relpages::float*8/1024/1024)::int FROM pg_class
 select pg_size_pretty(pg_table_size('coursera_event.cqo_event'))
 select pg_size_pretty(pg_table_size('data_mart.aud'))
 
+SELECT table_name, pg_size_pretty( pg_total_relation_size( 'netris.' || table_name) ) 
+FROM information_schema.tables 
+	WHERE table_schema='netris' ORDER BY table_name;
+				    
 
 CREATE TEMP TABLE foo AS SELECT 1 AS id;
 SELECT pg_size_pretty(pg_relation_size('pg_temp.foo'));
