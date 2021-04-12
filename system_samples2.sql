@@ -122,3 +122,82 @@ select * from ubtbl1
 insert into ubtbl1 values (2, 'Seryoga')
 
 select * from moodle_event.user_range_qo where input_answer is not null
+		    
+		    
+		    
+		    
+НАЧАЛО пример макрокода:
+CREATE OR REPLACE FUNCTION prod_test.p_check()
+	RETURNS TABLE (name varchar, foreign_table varchar, missed_rows varchar)
+	LANGUAGE plpgsql
+	VOLATILE
+AS $$
+	
+DECLARE rec RECORD;
+p_code_1 VARCHAR = '';
+p_code_2 VARCHAR = '';
+p_exec VARCHAR;
+p_indicator_links VARCHAR = 't_ind2group;t_ind2meas;t_ind2ter_meas;t_ind2terr_hierarchy;v_indicator2indicator_common;v_indicator2indicator_add';
+p_measures_links VARCHAR = 't_measure_val;t_ind2meas';
+p_indicator_gr_links VARCHAR = 't_ind2group';
+p_types VARCHAR = 't_indicator';
+p_terr_measures VARCHAR = 't_terr_measure_val;t_ind2ter_meas';
+p_terr_type VARCHAR = 't_territory';
+BEGIN
+  CREATE OR REPLACE VIEW prod_test.v_indicator2indicator_common AS
+  SELECT DISTINCT indicator_common AS indicator_id
+  FROM prod_test.t_indicator2indicator;
+
+  CREATE OR REPLACE VIEW prod_test.v_indicator2indicator_add AS
+  SELECT DISTINCT indicator_additional AS indicator_id
+  FROM prod_test.t_indicator2indicator;
+ 
+  EXECUTE 'DROP TABLE IF EXISTS geo_temp.t_test;
+           CREATE TABLE geo_temp.t_test(name VARCHAR, foreign_table VARCHAR, missed_rows VARCHAR);';
+
+p_code_1 = 'INSERT INTO geo_temp.t_test
+SELECT ''%table%'', ''%table_from_list%'', COALESCE(string_agg(%field%::VARCHAR, '','' ORDER BY %field%), '''') AS res
+FROM prod_test.%table_from_list% fr
+WHERE NOT EXISTS
+(
+ SELECT 1
+ FROM prod_test.%table% pm
+ WHERE fr.%field% = pm.%field%
+);';
+
+   FOR rec IN SELECT 't_indicator'::VARCHAR AS TABLE
+                     ,'indicator_id'::VARCHAR AS field
+                     ,regexp_split_to_table(p_indicator_links, ';')::VARCHAR AS table_from_list
+			  UNION
+			  SELECT 't_measure'::VARCHAR AS TABLE
+                     ,'measure_id'::VARCHAR AS field
+                     ,regexp_split_to_table(p_measures_links, ';')::VARCHAR AS table_from_list
+              UNION
+			  SELECT 't_indicator_group'::VARCHAR AS TABLE
+                     ,'indicator_gr_id'::VARCHAR AS field
+                     ,regexp_split_to_table(p_indicator_gr_links, ';')::VARCHAR AS table_from_list
+              UNION
+			  SELECT 't_indicator_type'::VARCHAR AS TABLE
+                     ,'indicator_type_id'::VARCHAR AS field
+                     ,regexp_split_to_table(p_types, ';')::VARCHAR AS table_from_list
+              UNION
+			  SELECT 't_terr_measure'::VARCHAR AS TABLE
+                     ,'ter_measure_id'::VARCHAR AS field
+                     ,regexp_split_to_table(p_terr_measures, ';')::VARCHAR AS table_from_list
+              UNION
+			  SELECT 't_territory_type'::VARCHAR AS TABLE
+                     ,'ter_type_id'::VARCHAR AS field
+                     ,regexp_split_to_table(p_terr_type, ';')::VARCHAR AS table_from_list
+   	LOOP
+   		p_code_2 = REPLACE(REPLACE(REPLACE(p_code_1, '%table%', rec.table), '%field%', rec.field), '%table_from_list%', rec.table_from_list);
+   		EXECUTE p_code_2;
+   	END LOOP;
+   
+   DROP VIEW IF EXISTS prod_test.v_indicator2indicator_common;
+   DROP VIEW IF EXISTS prod_test.v_indicator2indicator_add; 
+   RETURN QUERY SELECT * FROM geo_temp.t_test ORDER BY name;
+END;
+
+$$
+;
+КОНЕЦ пример макрокода:
